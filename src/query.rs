@@ -10,6 +10,8 @@ use crate::{
     sql::{Bind, SqlBuilder},
     Client,
 };
+use crate::cursor::RowBinaryCursor2;
+use crate::sql::Part;
 
 const MAX_QUERY_LEN_TO_USE_GET: usize = 8192;
 
@@ -72,6 +74,26 @@ impl Query {
 
         let response = self.do_execute(true)?;
         Ok(RowCursor(RowBinaryCursor::new(response)))
+    }
+
+    pub fn fetch_cells(mut self) -> Result<CellCursor> {
+        // ensure we don't need to bind any fields
+        match &self.sql {
+            SqlBuilder::InProgress { parts, size } => {
+                if parts.iter().find(|p| matches!(p, Part::Arg)).is_some() {
+                    return Err(Error::Custom("Cannot specify ?fields when calling fetch_rows".to_string()));
+                }
+            }
+            SqlBuilder::Failed(err) => {
+                return Err(Error::Custom(err.clone()))
+            }
+        }
+
+        self.sql.append(" FORMAT RowBinary");
+
+        let response = self.do_execute(true)?;
+
+        Ok(CellCursor(RowBinaryCursor2::new(response)))
     }
 
     /// Executes the query and returns just a single row.
@@ -181,6 +203,17 @@ pub struct RowCursor<T>(RowBinaryCursor<T>);
 impl<T> RowCursor<T> {
     /// Emits the next row.
     pub async fn next<'a, 'b: 'a>(&'a mut self) -> Result<Option<T>>
+    where
+        T: Deserialize<'b>,
+    {
+        self.0.next().await
+    }
+}
+
+pub struct CellCursor(RowBinaryCursor2);
+
+impl CellCursor {
+    pub async fn next<'a, 'b: 'a, T>(&'a mut self) -> Result<Option<T>>
     where
         T: Deserialize<'b>,
     {

@@ -87,6 +87,36 @@ async fn fetch_one_and_optional() {
     assert_eq!(got_string, "bar");
 }
 
+#[crate::named]
+#[tokio::test]
+async fn fetch_cells() {
+    let client = prepare_database!();
+
+    client
+        .query("CREATE TABLE test(n String) ENGINE = MergeTree ORDER BY n")
+        .execute()
+        .await
+        .unwrap();
+
+    let q = "SELECT n FROM test ORDER BY n";
+
+    #[derive(Serialize, Row)]
+    struct Row {
+        n: String,
+    }
+
+    let mut insert = client.insert("test").unwrap();
+    insert.write(&Row { n: "foo".into() }).await.unwrap();
+    insert.write(&Row { n: "bar".into() }).await.unwrap();
+    insert.end().await.unwrap();
+
+    let mut cell_cursor = client.query(q).fetch_cells().unwrap();
+
+    assert_eq!(cell_cursor.next::<String>().await.expect("Error getting cell"), Some("bar".into()));
+    assert_eq!(cell_cursor.next::<String>().await.expect("Error getting cell"), Some("foo".into()));
+    assert_eq!(cell_cursor.next::<String>().await.expect("Error getting cell"), None);
+}
+
 // See #19.
 #[crate::named]
 #[tokio::test]

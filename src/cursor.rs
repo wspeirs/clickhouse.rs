@@ -124,6 +124,43 @@ impl<T> RowBinaryCursor<T> {
     }
 }
 
+pub(crate) struct RowBinaryCursor2 {
+    raw: RawCursor,
+    buffer: Vec<u8>
+}
+
+impl RowBinaryCursor2 {
+    pub(crate) fn new(response: Response) -> Self {
+        Self {
+            raw: RawCursor::new(response),
+            buffer: vec![0; INITIAL_BUFFER_SIZE],
+        }
+    }
+
+    pub(crate) async fn next<'a, 'b: 'a, T>(&'a mut self) -> Result<Option<T>>
+        where
+            T: Deserialize<'b>,
+    {
+        let buffer = &mut self.buffer;
+
+        self.raw
+            .next(|pending| {
+                match rowbinary::deserialize_from(pending, &mut workaround_51132(buffer)[..]) {
+                    Ok(value) => ControlFlow::Yield(value),
+                    Err(Error::TooSmallBuffer(need)) => {
+                        let new_len = (buffer.len() + need)
+                            .checked_next_power_of_two()
+                            .expect("oom");
+                        buffer.resize(new_len, 0);
+                        ControlFlow::Retry
+                    }
+                    Err(err) => ControlFlow::Err(err),
+                }
+            })
+            .await
+    }
+}
+
 // === JsonCursor ===
 
 #[cfg(feature = "watch")]

@@ -93,27 +93,32 @@ async fn fetch_cells() {
     let client = prepare_database!();
 
     client
-        .query("CREATE TABLE test(n String) ENGINE = MergeTree ORDER BY n")
+        .query("CREATE TABLE fetch_cells(a String, b UInt64) ENGINE = MergeTree ORDER BY b")
         .execute()
         .await
         .unwrap();
 
-    let q = "SELECT n FROM test ORDER BY n";
-
     #[derive(Serialize, Row)]
     struct Row {
-        n: String,
+        a: String,
+        b: u64,
     }
 
-    let mut insert = client.insert("test").unwrap();
-    insert.write(&Row { n: "foo".into() }).await.unwrap();
-    insert.write(&Row { n: "bar".into() }).await.unwrap();
+    let mut insert = client.insert("fetch_cells").unwrap();
+    insert.write(&Row { a: "foo".into(), b: 2 }).await.unwrap();
+    insert.write(&Row { a: "bar".into(), b: 3 }).await.unwrap();
     insert.end().await.unwrap();
+
+    let q = "SELECT a, b FROM fetch_cells ORDER BY b";
 
     let mut cell_cursor = client.query(q).fetch_cells().unwrap();
 
-    assert_eq!(cell_cursor.next::<String>().await.expect("Error getting cell"), Some("bar".into()));
     assert_eq!(cell_cursor.next::<String>().await.expect("Error getting cell"), Some("foo".into()));
+    assert_eq!(cell_cursor.next::<u64>().await.expect("Error getting cell"), Some(2u64));
+
+    assert_eq!(cell_cursor.next::<String>().await.expect("Error getting cell"), Some("bar".into()));
+    assert_eq!(cell_cursor.next::<u64>().await.expect("Error getting cell"), Some(3u64));
+
     assert_eq!(cell_cursor.next::<String>().await.expect("Error getting cell"), None);
 }
 

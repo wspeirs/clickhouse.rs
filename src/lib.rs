@@ -7,6 +7,7 @@
 extern crate static_assertions;
 
 use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::fmt::{Debug, Formatter};
 
 use hyper::client::connect::HttpConnector;
 #[cfg(feature = "tls")]
@@ -62,6 +63,19 @@ pub struct Client {
     password: Option<String>,
     compression: Compression,
     options: HashMap<String, String>,
+}
+
+impl Debug for Client {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{ url: {}, database: {:?}, user: {:?}, password: {}, compression: {:?}, options: {:?} }}",
+            self.url,
+            self.database,
+            self.user,
+            self.password.as_ref().map_or_else(|| "None", |_| "Some"),
+            self.compression,
+            self.options
+        )
+    }
 }
 
 impl Default for Client {
